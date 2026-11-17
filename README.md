@@ -66,18 +66,38 @@ Short is half the length of Medium and Long is 1.5×.
 
 ## Reactive visuals
 
-**Visuals → Reactive FX** adds a WebGL1 post-processing pass over the view. The effects react to the music:
+**Visuals → FX** is a stack of WebGL1 post-processing effects. Tick any combination and give each one its own amount. **FX master** scales the whole stack, and section intensity scales it further. Effects apply in the fixed order below, one GPU pass each, so a stack of 3 costs 3 full-screen passes.
 
-- **Pulse**: the kick zooms the image, the snare adds chromatic aberration, the bass makes the vignette breathe, and bright areas glow.
-- **Kaleidoscope**: the number of segments follows section intensity, and the spin follows time and the kick.
-- **Liquid warp**: the bass drives the displacement, and the lead tints the image toward the chord color.
-- **Feedback trails**: the previous frame is zoomed and rotated (rotation follows lead pitch). Uses ping-pong framebuffers.
-- **Glitch**: block shifts on snare and kick, RGB split on hats, scanlines, and a few inverted blocks on the kick.
-- **Mirror folds**: Catoptron-style folding. The fold count follows intensity, and the bass pushes the fold planes.
+| Group | Effects |
+|---|---|
+| Space | **Zoom punch** (kick zoom + nudge), **Kick ripples** (a ring expands after every kick), **Liquid warp** (bass), **Tunnel** (log-polar fly-through, speed follows the bass), **Kaleidoscope** (segments follow intensity), **Mirror folds** (Catoptron-style), **Pixelate** (block size jumps on snares) |
+| Time | **Feedback trails**: has its own history buffer, so it works anywhere in the stack; lead pitch steers its rotation |
+| Color | **RGB split**, **Hue shift** (drift + melody), **Duotone** (luminance mapped between the chord color and its complement), **Posterize** (fewer levels in intense sections) |
+| Texture | **Neon edges** (Sobel edges in the chord color, brighter on hats/kicks), **Halftone print** (45° dot screen), **Glitch** |
+| Finish | **Bloom**, **Vignette** (breathes with the bass), **CRT / film grain** (curvature, scanlines, aperture mask, grain), **Strobe** (kick flashes, snare half-inverts) |
 
-The effects are driven by features computed from the **score**, not from an audio analyser: kick, snare, hat and bass envelopes, lead level and pitch, the chord root as a hue (the inverse of the color→key mapping), and section intensity. That's why **Export MP4 bakes in exactly what you see live**. **FX amount** scales everything, and intensity scales it further section by section.
+**Presets**: None, Pulse, Dream, Club, Trip, Catoptron, Neon, Tunnel, Retro, Print, Glitch. A preset is a starting point: ticking or adjusting any effect switches it to Custom. Dragging an amount slider switches that effect on.
 
-On a GPU the effect costs about a millisecond per frame. Without hardware WebGL (for example headless software rendering), an MP4 export with FX runs far below real time: about 7 frames/s at 720p in testing, versus about 100 frames/s with FX off.
+The effects are driven by features computed from the **score**, not from an audio analyser: kick, snare, hat and bass envelopes, time since the last kick and snare, lead level and pitch, the chord root as a hue (the inverse of the color→key mapping), and section intensity. So **Export MP4 bakes in exactly what you see live**.
+
+On a GPU each pass costs about a millisecond. Without hardware WebGL (software rasterizers such as SwiftShader), every pass runs on the CPU. In testing on a 2-core machine with software rendering, a 6-effect stack at 720p rendered at about 1 frame/s, and one effect at about 7–9 frames/s. That's why the FX default to None on software GL.
+
+## Demo images
+
+**Source → Demo image** picks the generator, and **New demo** re-rolls the seed. **Random** picks a new type each time. Each generator takes about 4–190 ms.
+
+| Type | What the scanner gets |
+|---|---|
+| Landscape | layered ridgelines → melodic contours, trees → rhythm |
+| Nebula | domain-warped gas clouds, stars and bright cores → slow, sparse, colorful |
+| Night city | lit-window grids → dense hats and arps, skyline → melody, water reflection |
+| Bauhaus abstract | bold primaries and hard edges on paper → punchy, high contrast |
+| Op-art waves | warped stripes or moiré rings → very rhythmic, busy |
+| Flow field | thousands of streamlines → constant texture and motion |
+| Mandala | N-fold radial symmetry → made for the radar and rings scan paths |
+| Aurora | curtains over a dark ridge → ambient |
+| Julia fractal | escape-time Julia sets with smooth coloring |
+| Pixel art | 160×90 scene scaled up crisp → blocky steps, made for chiptune |
 
 ## Instruments
 
@@ -175,10 +195,10 @@ engine/demux.js     MP4/MOV/fMP4 + WebM/MKV demuxers, WebCodecs frame source (De
 engine/videostep.js <video> frame stepping fallback, duration fix for MediaRecorder WebM
 scene.js            WebGL1 scene renderer: media + camera, playhead, notes, FX (live view and export)
 render.js           2D renderer with the same look (no-WebGL / software-GL path)
-fx.js               reactive FX shaders + score-derived audio features
-engine/demo.js      seeded procedural demo landscapes
+fx.js               19-effect shader library, presets, score-derived audio features
+engine/demo.js      ten seeded procedural demo generators
 ```
 
 Space toggles play. `window.ekphrasis` exposes state for debugging.
 
-v1.4.1
+v1.5.0

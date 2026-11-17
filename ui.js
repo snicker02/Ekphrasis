@@ -44,6 +44,29 @@ export function buildPanel(root, spec, state, onChange, onButton) {
         break;
       }
       case 'note': host.appendChild(el('p', 'note', it.text)); break;
+      case 'sub': host.appendChild(el('div', 'subhead', it.text)); break;
+      case 'fxrow': {
+        // One effect: [✓] Name ———slider——— 60%   (state at it.key = { on, amt })
+        const w = el('div', 'fxrow');
+        const lab = el('label', 'fxname');
+        const c = el('input'); c.type = 'checkbox';
+        lab.appendChild(c); lab.appendChild(el('span', null, it.label));
+        const r = el('input'); r.type = 'range'; r.min = 0; r.max = 1; r.step = 0.01;
+        const val = el('span', 'val');
+        c.addEventListener('change', () => { setPath(state, it.key + '.on', c.checked); w.classList.toggle('off', !c.checked); onChange(it.key + '.on'); });
+        r.addEventListener('input', () => {
+          setPath(state, it.key + '.amt', +r.value); val.textContent = Math.round(r.value * 100) + '%';
+          if (!c.checked) { c.checked = true; setPath(state, it.key + '.on', true); w.classList.remove('off'); }
+          onChange(it.key + '.amt');
+        });
+        w.appendChild(lab); w.appendChild(r); w.appendChild(val);
+        host.appendChild(w);
+        syncers.push(() => {
+          const v = getPath(state, it.key);
+          c.checked = !!v.on; r.value = v.amt; val.textContent = Math.round(v.amt * 100) + '%'; w.classList.toggle('off', !v.on);
+        });
+        break;
+      }
       case 'select': {
         const w = el('label', 'row');
         w.appendChild(el('span', 'lbl', it.label));

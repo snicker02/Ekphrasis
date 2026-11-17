@@ -2,8 +2,9 @@
 // The whole frame is built on the GPU:
 //   pass 1  compose : media texture through the camera + analytic playhead glow  → scene FBO
 //   pass 2  notes   : note particles as additive quads                         → scene FBO
-//   pass 3  fx      : reactive post-processing (+ fade)                        → canvas
-//                     (feedback mode renders into a ping-pong FBO and is copied out)
+//   pass 3+ fx      : the enabled effects, one pass each, in FX_LIST order       → ping-pong FBOs
+//                     (feedback writes into its own history pair, so it can read its previous frame)
+//   final   copy    : last result × fade                                       → canvas
 // For still images the media texture is uploaded once; video frames are uploaded per frame straight from the
 // <video> element. Nothing is read back to the CPU except by the encoder.
 
@@ -11,7 +12,6 @@ import { mapUV } from './engine/analysis.js';
 import { FRAG as FX_FRAG, VERT, COPY } from './fx.js';
 import { COLORS, MAX_LIFE, lifeOf } from './render.js';
 
-const MODE_ID = { off: 0, pulse: 1, kaleido: 2, warp: 3, feedback: 4, glitch: 5, mirror: 6 };
 const SCAN_ID = { horizontal: 0, vertical: 1, radial: 2, rings: 3 };
 const TAU = Math.PI * 2;
 
@@ -229,7 +229,7 @@ export class SceneRenderer {
     this.noteData = new Float32Array(6 * 11 * 512);
     this.media = makeTex(gl, 0, 0);
     this.mediaEl = null; this.mediaVideo = false; this.mediaW = 0; this.mediaH = 0;
-    this.w = 0; this.h = 0; this.scene = null; this.pp = null; this.cur = 0;
+    this.w = 0; this.h = 0; this.scene = null; this.chain = null; this.hist = null; this.hcur = 0;
     this._tmp = [0, 0];
   }
 
@@ -238,9 +238,11 @@ export class SceneRenderer {
     const gl = this.gl;
     this.canvas.width = w; this.canvas.height = h;
     this.w = w; this.h = h;
-    for (const t of [this.scene, ...(this.pp || [])]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+    for (const t of [this.scene, ...(this.chain || []), ...(this.hist || [])]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
     this.scene = makeTarget(gl, w, h);
-    this.pp = [makeTarget(gl, w, h), makeTarget(gl, w, h)];
+    this.chain = [makeTarget(gl, w, h), makeTarget(gl, w, h)];
+    this.hist = [makeTarget(gl, w, h), makeTarget(gl, w, h)];
+    this.hcur = 0;
   }
 
   // Still images are uploaded once (pre-scaled to `maxDim` with high-quality resampling so camera moves don't
@@ -273,8 +275,8 @@ export class SceneRenderer {
 
   clearHistory() {
     const gl = this.gl;
-    if (!this.pp) return;
-    for (const b of this.pp) { gl.bindFramebuffer(gl.FRAMEBUFFER, b.fb); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+    if (!this.hist) return;
+    for (const b of this.hist) { gl.bindFramebuffer(gl.FRAMEBUFFER, b.fb); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -287,7 +289,7 @@ export class SceneRenderer {
     for (let i = 1; i < 4; i++) gl.disableVertexAttribArray(i);
   }
 
-  // o: { t, u, scan, overlay, cols, rows, events, cam, fill, dpr, fx:{ mode, amount, features }, fade }
+  // o: { t, u, scan, overlay, cols, rows, events, cam, fill, dpr, fx:{ stack:[{id,mode,amt}], master, features }, fade }
   render(o) {
     const gl = this.gl, W = this.w, H = this.h;
     const R = mediaRect(W, H, this.mediaW, this.mediaH, o.fill);
@@ -338,31 +340,39 @@ export class SceneRenderer {
       }
     }
 
-    // ---- pass 3: fx (+ fade) to canvas; feedback goes through the ping-pong pair
-    const fx = o.fx || { mode: 'off', amount: 0, features: null };
-    const f = fx.features || { kick: 0, snare: 0, hat: 0, bass: 0, lead: 0, pitch: 0.5, hue: 0, int: 0.7 };
-    const feedback = fx.mode === 'feedback';
-    const dst = this.pp[this.cur], prev = this.pp[1 - this.cur];
-    const F = this.fx;
-    this._bindQuad(F.p);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, feedback ? dst.fb : null);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.scene.tex); gl.uniform1i(F.u.uTex, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, prev.tex); gl.uniform1i(F.u.uPrev, 1);
-    gl.uniform2f(F.u.uRes, W, H);
-    const vals = {
-      uTime: o.t, uMode: MODE_ID[fx.mode] || 0, uAmt: (fx.amount || 0) * (0.35 + 0.65 * f.int), uKick: f.kick, uSnare: f.snare,
-      uHat: f.hat, uBass: f.bass, uLead: f.lead, uPitch: f.pitch, uHue: f.hue, uInt: f.int, uFade: o.fade ?? 1,
+    // ---- pass 3+: effect chain (one pass per enabled effect, in FX_LIST order)
+    const fx = o.fx || { stack: [], master: 0, features: null };
+    const f = fx.features || { kick: 0, snare: 0, hat: 0, bass: 0, lead: 0, pitch: 0.5, hue: 0, int: 0.7, kickAge: 99, snareAge: 99 };
+    const effects = fx.stack || [];
+    const F = this.fx, scale = (fx.master ?? 1) * (0.35 + 0.65 * f.int);
+    const common = {
+      uTime: o.t, uKick: f.kick, uSnare: f.snare, uHat: f.hat, uBass: f.bass, uLead: f.lead, uPitch: f.pitch,
+      uHue: f.hue, uInt: f.int, uKickAge: Math.min(f.kickAge ?? 99, 99), uSnareAge: Math.min(f.snareAge ?? 99, 99),
     };
-    for (const k in vals) if (F.u[k]) gl.uniform1f(F.u[k], vals[k]);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    if (feedback) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      this._bindQuad(this.copy.p);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dst.tex); gl.uniform1i(this.copy.u.uTex, 0);
+    let src = this.scene.tex, k = 0, usedFeedback = false;
+    for (const e of effects) {
+      const fb = e.id === 'feedback';
+      const dst = fb ? this.hist[this.hcur] : this.chain[k];
+      this._bindQuad(F.p);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform1i(F.u.uTex, 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.hist[1 - this.hcur].tex); gl.uniform1i(F.u.uPrev, 1);
+      gl.uniform2f(F.u.uRes, W, H);
+      for (const key in common) if (F.u[key]) gl.uniform1f(F.u[key], common[key]);
+      gl.uniform1f(F.u.uMode, e.mode);
+      gl.uniform1f(F.u.uAmt, e.amt * scale);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      this.cur = 1 - this.cur;
+      src = dst.tex;
+      if (fb) usedFeedback = true; else k = 1 - k;
     }
-    gl.activeTexture(gl.TEXTURE0);
+    if (usedFeedback) this.hcur = 1 - this.hcur;
+
+    // ---- final: copy to the canvas with the fade
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this._bindQuad(this.copy.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src); gl.uniform1i(this.copy.u.uTex, 0);
+    gl.uniform1f(this.copy.u.uFade, o.fade ?? 1);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
   // Same particle look as the 2D renderer: glows for lead/arp/drums, rings for chords/bass/atmos.

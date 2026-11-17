@@ -85,3 +85,10 @@ input[type=checkbox] { accent-color: var(--accent); }
   #app { grid-template-columns: 1fr; grid-template-rows: 48px 46vh 90px 1fr; grid-template-areas: "top" "stage" "roll" "panel"; }
   #panel { border-right: 0; border-top: 1px solid var(--line); }
 }
+
+.subhead { font: 600 9px/1 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); margin: 12px 0 4px; }
+.fxrow { display: grid; grid-template-columns: 128px 1fr 34px; align-items: center; gap: 6px; margin: 3px 0; }
+.fxrow.off .fxname span, .fxrow.off .val { opacity: 0.45; }
+.fxrow .fxname { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fxrow input[type=range] { margin: 0; }
+.fxrow .val { font: 10px var(--mono); color: var(--dim); text-align: right; }

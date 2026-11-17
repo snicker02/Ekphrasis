@@ -10,16 +10,16 @@ import { KITS, KIT_ORDER } from './engine/drums.js';
 import { Synth } from './engine/synth.js';
 import { Sequencer, scoreFromSteps, renderScore } from './engine/sequencer.js';
 import { encodeWAV, buildMIDI, pickVideoMime, download } from './engine/export.js';
-import { makeDemo } from './engine/demo.js';
+import { makeDemo, DEMO_TYPES } from './engine/demo.js';
 import { buildPanel } from './ui.js';
 import { drawFrame, COLORS, MAX_LIFE } from './render.js';
 import { encodeMP4, mp4Supported, MemorySink, FileSink, videoBitrate } from './engine/mp4.js';
-import { FX_MODES, audioFeatures } from './fx.js';
+import { FX_LIST, FX_PRESETS, emptyStack, applyPreset, activeEffects, audioFeatures } from './fx.js';
 import { SceneRenderer, cameraAt } from './scene.js';
 import { VideoStepper, resolveDuration } from './engine/videostep.js';
 import { DecodedVideo } from './engine/demux.js';
 
-export const VERSION = '1.4.1';
+export const VERSION = '1.5.0';
 const ROWS = 24;
 const VIDEO_COLS = 16;
 
@@ -39,7 +39,8 @@ const S = {
   reverb: 0.35, reverbSize: 3, delay: 0.22, master: 0.8, srcAudio: 0,
   mp4size: 1080, exAspect: 'source', exFit: 'fill', exFps: 30, exQuality: 'high', exFade: true, exDisk: true,
   camera: 'drift',
-  form: 'medium', fx: 'pulse', fxAmount: 0.6,
+  form: 'medium', fxPreset: 'pulse', fxStack: applyPreset(emptyStack(), 'pulse'), fxAmount: 0.8,
+  demoType: 'random',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -51,8 +52,11 @@ let glv = null;
 try { glv = new SceneRenderer(viewgl); } catch (e) { console.warn('WebGL unavailable, using the 2D renderer:', e.message); }
 let glvMediaKey = null;
 // GPU path when the GPU is real, or when an FX mode is on (FX need GL). Software GL without FX → 2D canvas.
-const useGL = () => !!glv && (!glv.software || S.fx !== 'off');
-if (glv && glv.software) S.fx = 'off'; // software GL: default to the fast 2D path; FX remain selectable
+const fxOn = () => activeEffects(S.fxStack).length > 0 && S.fxAmount > 0;
+const fxParams = (features) => ({ stack: activeEffects(S.fxStack), master: S.fxAmount, features });
+const useGL = () => !!glv && (!glv.software || fxOn());
+// Software GL: default to the fast 2D path; effects remain selectable.
+if (glv && glv.software) { S.fxPreset = 'none'; applyPreset(S.fxStack, 'none'); }
 let lastStep = null;
 const analyzer = new Analyzer(), composer = new Composer();
 
@@ -284,8 +288,8 @@ function loadDemo() {
   stop(); releaseSource();
   playToken++;
   demoSeed++;
-  const cv = makeDemo(demoSeed);
-  setImage(cv, cv.width, cv.height, 'demo-' + demoSeed);
+  const d = makeDemo(S.demoType, demoSeed);
+  setImage(d.canvas, d.canvas.width, d.canvas.height, d.name);
 }
 
 // Step providers for the sequencer.
@@ -563,7 +567,7 @@ async function exportMp4() {
     if (!scene) {
       cv2d = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
       c2d = cv2d.getContext('2d');
-      if (S.fx !== 'off') toast('WebGL unavailable — exporting without reactive FX', 4000);
+      if (fxOn()) toast('WebGL unavailable — exporting without reactive FX', 4000);
     }
     const pathName = scene ? (scene.software ? 'GPU (software)' : 'GPU') : '2D';
     if (isVideo && !dv) { vid.muted = true; stepper = new VideoStepper(vid, { rate: 1 }); await stepper.start(0); } // rate 1: ≤1 source frame error
@@ -589,7 +593,7 @@ async function exportMp4() {
         const cam = cameraAt(S.camera, t, { scan: S.scan, playheadAt, intensity: stepInfo.intensity, barDur, seed: composer.seed });
         scene.render({
           t, u, scan: S.scan, overlay: S.overlay, cols, rows: ROWS, events: win, cam, fill: S.exFit === 'fill', dpr: odpr,
-          fx: { mode: S.fx, amount: S.fxAmount, features: audioFeatures(win, t, stepInfo) }, fade: fade(t),
+          fx: fxParams(audioFeatures(win, t, stepInfo)), fade: fade(t),
         });
         if (i % 10 === 0) exUI.thumb(canvas);
         return canvas;
@@ -673,7 +677,9 @@ const kits = KIT_ORDER.map((n) => [n, KITS[n].label]);
 
 const spec = [
   { sec: 'Source' },
-  { type: 'buttons', items: [['open', 'Open image / video'], ['webcam', 'Webcam'], ['demo', 'New demo']] },
+  { type: 'buttons', items: [['open', 'Open image / video'], ['webcam', 'Webcam']] },
+  { type: 'select', key: 'demoType', label: 'Demo image', options: DEMO_TYPES },
+  { type: 'buttons', items: [['demo', 'New demo']] },
   { type: 'info', id: 'srcinfo' },
   { sec: 'Style' },
   { type: 'select', key: 'genre', label: 'Genre', options: genreOpts },
@@ -714,8 +720,12 @@ const spec = [
   { sec: 'Visuals' },
   { type: 'select', key: 'overlay', label: 'Overlay', options: [['full', 'Playhead + notes'], ['playhead', 'Playhead only'], ['none', 'None']] },
   { type: 'select', key: 'camera', label: 'Camera', options: [['static', 'Static'], ['drift', 'Drift (slow pan & zoom)'], ['follow', 'Follow the scan']] },
-  { type: 'select', key: 'fx', label: 'Reactive FX', options: FX_MODES },
-  { type: 'range', key: 'fxAmount', label: 'FX amount', min: 0, max: 1, step: 0.01, fmt: pct },
+  { type: 'select', key: 'fxPreset', label: 'FX preset', options: [...Object.entries(FX_PRESETS).map(([k, v]) => [k, v[0]]), ['custom', 'Custom']] },
+  { type: 'range', key: 'fxAmount', label: 'FX master', min: 0, max: 1, step: 0.01, fmt: pct },
+  ...FX_LIST.flatMap(([id, label, group], i) => [
+    ...(i === 0 || FX_LIST[i - 1][2] !== group ? [{ type: 'sub', text: group }] : []),
+    { type: 'fxrow', key: 'fxStack.' + id, label },
+  ]),
   { sec: 'Export' },
   { type: 'select', key: 'mp4size', label: 'Resolution', num: true, options: [[720, '720p'], [1080, '1080p'], [1440, '1440p'], [2160, '2160p (4K)']] },
   { type: 'select', key: 'exAspect', label: 'Aspect', options: [['source', 'Source'], ['16:9', '16:9 landscape'], ['9:16', '9:16 vertical'], ['1:1', '1:1 square'], ['4:5', '4:5 portrait']] },
@@ -731,7 +741,21 @@ const spec = [
 
 let irTimer = 0;
 function onChange(key) {
+  if (key.startsWith('fxStack.')) {
+    // Hand edits turn the preset into "Custom".
+    if (S.fxPreset !== 'custom') { S.fxPreset = 'custom'; panel.ctrls.fxPreset.value = 'custom'; }
+    if (fxOn() && !glv) toast('WebGL is unavailable, so reactive FX are off');
+    return;
+  }
   switch (key) {
+    case 'fxPreset':
+      if (S.fxPreset !== 'custom') { applyPreset(S.fxStack, S.fxPreset); panel.sync(); }
+      if (fxOn() && !glv) toast('WebGL is unavailable, so reactive FX are off');
+      if (glv) glv.clearHistory();
+      return;
+    case 'demoType':
+      loadDemo();
+      return;
     case 'genre':
       recompose(true);
       break;
@@ -741,9 +765,6 @@ function onChange(key) {
     case 'bars': case 'form':
       if (src.kind === 'image') analyzeImage(); else recompose();
       break;
-    case 'fx':
-      if (S.fx !== 'off' && !glv) toast('WebGL is unavailable, so reactive FX are off');
-      return;
     case 'key': case 'mode': case 'harmony': case 'range': case 'density':
     case 'rhythm': case 'humanize': case 'autoTempo': case 'tempo': case 'voices.atmos.inst':
       recompose();
@@ -869,7 +890,7 @@ function drawView() {
     const cam = cameraAt(S.camera, t, { scan: S.scan, playheadAt: livePlayheadAt, intensity: stepInfo ? stepInfo.intensity : 0.6, barDur: 16 * sd, seed: composer.seed });
     glv.render({
       t, u, scan: S.scan, overlay: S.overlay, cols: gridCols(), rows: ROWS, events, cam, fill: false, dpr,
-      fx: { mode: S.fx, amount: S.fxAmount, features: audioFeatures(events, t, stepInfo) }, fade: 1,
+      fx: fxParams(audioFeatures(events, t, stepInfo)), fade: 1,
     });
     viewgl.style.display = 'block';
   } else {
