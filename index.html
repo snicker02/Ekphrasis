@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ekphrasis — music from images and video</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">EKPHRASIS<span id="ver"></span></div>
+    <button id="play" class="primary" disabled>▶ Play</button>
+    <button id="rec" class="recbtn" title="Record the view and music to a video file">● Rec</button>
+    <div id="readout">Loading…</div>
+  </header>
+  <aside id="panel"></aside>
+  <main id="stage">
+    <canvas id="view"></canvas>
+    <canvas id="viewgl"></canvas>
+    <div id="drop"><div>Drop an image or video</div></div>
+  </main>
+  <footer id="rollwrap"><canvas id="roll"></canvas></footer>
+</div>
+<div id="toast"></div>
+<div id="exportpanel" hidden>
+  <div class="ex-box">
+    <div class="ex-title">Exporting MP4</div>
+    <canvas id="expreview" width="480" height="270"></canvas>
+    <div class="ex-phase" id="exphase"></div>
+    <div class="ex-bar"><div id="exbar"></div></div>
+    <div class="ex-stats" id="exstats"></div>
+    <button id="excancel" class="btn">Cancel</button>
+  </div>
+</div>
+<input type="file" id="file" accept="image/*,video/*" hidden>
+<video id="vid" playsinline muted preload="auto"></video>
+<script type="module" src="main.js"></script>
+</body>
+</html>
