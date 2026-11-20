@@ -201,4 +201,6 @@ engine/demo.js      ten seeded procedural demo generators
 
 Space toggles play. `window.ekphrasis` exposes state for debugging.
 
-v1.5.0
+v1.6.0
+
+**Mobile pass (1.6.0).** On phones the view and piano roll stay docked at the top and each panel section (Source, Style, Arrangement…) is a tab directly underneath; in landscape the tabs sit in a narrower side panel. **Confirm changes before applying** (Source tab, on by default): composition settings (genre, key, harmony, rhythm, form…) wait for **⏎ Apply** in the top bar or Enter instead of rewriting the song on every slider step; mixer, effects and visuals stay live. Fixed the panel running off the right edge on narrow screens.
