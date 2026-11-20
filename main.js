@@ -1,5 +1,6 @@
 // Ekphrasis — app wiring: sources, transport, panel, rendering, exports.
 
+import { initPanelTabs } from './tabs.js';
 import { Analyzer, SCAN_MODES, mapUV, mergeGlobals } from './engine/analysis.js';
 import { resolveKey, NOTE_NAMES, MODES } from './engine/theory.js';
 import { Composer, composeImage, composeSong, VOICES } from './engine/composer.js';
@@ -19,7 +20,7 @@ import { SceneRenderer, cameraAt } from './scene.js';
 import { VideoStepper, resolveDuration } from './engine/videostep.js';
 import { DecodedVideo } from './engine/demux.js';
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 const ROWS = 24;
 const VIDEO_COLS = 16;
 
@@ -740,6 +741,35 @@ const spec = [
 ];
 
 let irTimer = 0;
+// ---------------------------------------------------- confirm before applying
+// Composition settings (genre, key, harmony, rhythm, form…) rewrite the whole
+// score, so dragging a slider would restart the music on every step. With
+// "Confirm changes" on (the default) they wait for Apply / Enter; mixer, FX and
+// visual settings stay live. The choice is remembered.
+const pend = { analyze: false, recompose: false, forceGenre: false };
+let confirmMode = true;
+try { const v = localStorage.getItem('ekphrasis.confirm'); if (v !== null) confirmMode = v === '1'; } catch (_) {}
+function holdChange(what) {
+  if (!confirmMode) return false;
+  if (what.analyze) pend.analyze = true;
+  if (what.recompose) pend.recompose = true;
+  if (what.forceGenre) pend.forceGenre = true;
+  updateApply();
+  return true;
+}
+function updateApply() {
+  const b = $('apply'); if (!b) return;
+  const on = pend.analyze || pend.recompose;
+  b.hidden = !on;
+}
+function applyPending() {
+  const { analyze, recompose: rc, forceGenre } = pend;
+  pend.analyze = pend.recompose = pend.forceGenre = false;
+  updateApply();
+  if (analyze && src.kind === 'image') { if (forceGenre) updateGenre(true); analyzeImage(); }
+  else if (rc || analyze) recompose(forceGenre);
+}
+
 function onChange(key) {
   if (key.startsWith('fxStack.')) {
     // Hand edits turn the preset into "Custom".
@@ -757,16 +787,20 @@ function onChange(key) {
       loadDemo();
       return;
     case 'genre':
+      if (holdChange({ recompose: true, forceGenre: true })) return;
       recompose(true);
       break;
     case 'scan':
-      if (src.kind === 'image') analyzeImage(); else { analyzer.reset(); src.videoSteps = null; }
+      if (src.kind === 'image') { if (holdChange({ analyze: true })) return; analyzeImage(); }
+      else { analyzer.reset(); src.videoSteps = null; }
       break;
     case 'bars': case 'form':
+      if (holdChange(src.kind === 'image' ? { analyze: true } : { recompose: true })) return;
       if (src.kind === 'image') analyzeImage(); else recompose();
       break;
     case 'key': case 'mode': case 'harmony': case 'range': case 'density':
     case 'rhythm': case 'humanize': case 'autoTempo': case 'tempo': case 'voices.atmos.inst':
+      if (holdChange({ recompose: true })) return;
       recompose();
       break;
     case 'loop':
@@ -806,6 +840,33 @@ const panel = buildPanel($('panel'), spec, S, onChange, onButton);
   $('panel').appendChild(credit);
 }
 $('ver').textContent = 'v' + VERSION;
+{
+  // "Confirm changes" toggle at the top of the Source section.
+  const first = $('panel').querySelector('.sec');
+  const row = document.createElement('label');
+  row.className = 'row check';
+  row.innerHTML = '<input type="checkbox" id="confirmMode"> <span class="lbl">Confirm changes before applying</span>';
+  first.appendChild(row);
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.textContent = 'When on, composition settings (genre, key, harmony, rhythm, form…) wait until you press Apply or Enter. Mixer, effects and visuals stay live.';
+  first.appendChild(note);
+  const c = $('confirmMode');
+  c.checked = confirmMode;
+  c.addEventListener('change', () => {
+    confirmMode = c.checked;
+    try { localStorage.setItem('ekphrasis.confirm', confirmMode ? '1' : '0'); } catch (_) {}
+    if (!confirmMode) applyPending();
+  });
+  $('apply').addEventListener('click', applyPending);
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.repeat || !(pend.analyze || pend.recompose)) return;
+    const t = e.target;
+    if (t && (t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) return;
+    e.preventDefault(); applyPending();
+  });
+}
+initPanelTabs($('panel'));
 
 function syncTempoControl() {
   const r = panel.ctrls.tempo, val = panel.ctrls['tempo:val'];

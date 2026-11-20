@@ -81,9 +81,46 @@ input[type=checkbox] { accent-color: var(--accent); }
 #toast.show { opacity: 1; }
 .credit { color: var(--dim); font-size: 11px; margin-top: 14px; }
 
+button.applybtn { background: #2b2414; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+button.applybtn[hidden] { display: none; }
+
+/* ---------- phones ---------- */
 @media (max-width: 760px) {
-  #app { grid-template-columns: 1fr; grid-template-rows: 48px 46vh 90px 1fr; grid-template-areas: "top" "stage" "roll" "panel"; }
-  #panel { border-right: 0; border-top: 1px solid var(--line); }
+  #app { height: 100dvh; grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 40dvh 72px minmax(0, 1fr); grid-template-areas: "top" "stage" "roll" "panel"; }
+  #panel { border-right: 0; border-top: 1px solid var(--line); padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  #topbar { gap: 8px; padding: 0 10px; min-width: 0; }
+  .brand { letter-spacing: 0.2em; margin-right: 2px; font-size: 12px; }
+  .brand span { display: none; }
+  #topbar button { padding: 6px 10px; white-space: nowrap; flex: none; }
+  button.primary { min-width: 0; }
+  #readout { min-width: 0; font-size: 10.5px; }
+  select { min-width: 0; max-width: 60%; }
+  .fxrow { grid-template-columns: minmax(0, 110px) 1fr 34px; }
+  #toast { bottom: calc(50dvh + 10px); }
+}
+/* tab layout (body.tabbed, set by tabs.js) */
+#tabbar { display: none; }
+body.tabbed #tabbar {
+  display: flex; gap: 6px; overflow-x: auto; position: sticky; top: 0; z-index: 2;
+  margin: 0 -14px 4px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); scrollbar-width: none;
+}
+body.tabbed #tabbar::-webkit-scrollbar { display: none; }
+#tabbar .tab { flex: none; white-space: nowrap; border-radius: 999px; min-height: 34px; padding: 0 13px; font: 600 10px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+#tabbar .tab.sel { background: var(--accent); border-color: var(--accent); color: #1a1408; }
+body.tabbed #panel { padding-top: 0; }
+body.tabbed #panel > .sec { display: none; border-bottom: 0; }
+body.tabbed #panel > .sec.tabon { display: block; }
+body.tabbed #panel > .sec.tabon > h3 { display: none; }
+/* landscape phones: short screen, so a thinner roll and a narrower panel */
+@media (max-height: 500px) and (orientation: landscape) {
+  #app { height: 100dvh; grid-template-columns: 270px minmax(0, 1fr); grid-template-rows: 42px minmax(0, 1fr) 64px; }
+  .brand span { display: none; }
+}
+@media (pointer: coarse) {
+  input[type=range] { height: 28px; }
+  input[type=checkbox] { width: 18px; height: 18px; }
+  select, .btn { min-height: 36px; }
+  .row.check { min-height: 34px; }
 }
 
 .subhead { font: 600 9px/1 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); margin: 12px 0 4px; }
