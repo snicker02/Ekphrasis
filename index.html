@@ -13,6 +13,7 @@
     <div class="brand">EKPHRASIS<span id="ver"></span></div>
     <button id="play" class="primary" disabled>▶ Play</button>
     <button id="rec" class="recbtn" title="Record the view and music to a video file">● Rec</button>
+    <button id="shelfBtn" title="Shared image shelf: compose from an image another snicker02 app made">⇄ Shelf</button>
     <button id="apply" class="applybtn" hidden title="Apply the new composition settings (Enter)">⏎ Apply</button>
     <div id="readout">Loading…</div>
   </header>
@@ -37,6 +38,7 @@
 </div>
 <input type="file" id="file" accept="image/*,video/*" hidden>
 <video id="vid" playsinline muted preload="auto"></video>
+<script src="https://snicker02.github.io/shared/bridge.js"></script>
 <script type="module" src="main.js"></script>
 </body>
 </html>
