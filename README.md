@@ -201,6 +201,15 @@ engine/demo.js      ten seeded procedural demo generators
 
 Space toggles play. `window.ekphrasis` exposes state for debugging.
 
-v1.6.0
+v1.7.0
 
 **Mobile pass (1.6.0).** On phones the view and piano roll stay docked at the top and each panel section (Source, Style, Arrangement…) is a tab directly underneath; in landscape the tabs sit in a narrower side panel. **Confirm changes before applying** (Source tab, on by default): composition settings (genre, key, harmony, rhythm, form…) wait for **⏎ Apply** in the top bar or Enter instead of rewriting the song on every slider step; mixer, effects and visuals stay live. Fixed the panel running off the right edge on narrow screens.
+
+## Shared image shelf
+
+The **⇄ Shelf** button opens the image shelf shared by all apps on [snicker02.github.io](https://snicker02.github.io/#shelf). It stores images in this browser only (IndexedDB), and every app on the site can read the same shelf.
+
+- **Load here** brings a shelf image into Ekphrasis as the source to compose from. Opening the app with `?shelf=<id>` does the same on start, which is how other apps' **Send to** works.
+- Add files, Paste, or drop images on the panel to put them on the shelf.
+
+The shelf code lives in [`snicker02.github.io/shared/bridge.js`](https://github.com/snicker02/snicker02.github.io/blob/main/shared/bridge.js). If it can't load (for example when you're offline), the app works as before and the button is hidden.

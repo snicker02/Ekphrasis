@@ -20,7 +20,7 @@ import { SceneRenderer, cameraAt } from './scene.js';
 import { VideoStepper, resolveDuration } from './engine/videostep.js';
 import { DecodedVideo } from './engine/demux.js';
 
-export const VERSION = '1.6.0';
+export const VERSION = '1.7.0';
 const ROWS = 24;
 const VIDEO_COLS = 16;
 
@@ -893,6 +893,13 @@ function updateReadout(st) {
 playBtn.addEventListener('click', togglePlay);
 recBtn.addEventListener('click', () => (recorder ? stopRecording() : startRecording()));
 $('file').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
+
+// Shared image shelf (snicker02.github.io/shared/bridge.js): a shelf image is a source, like Open.
+if (window.SnickerShelf) {
+  window.SnickerShelf.mount({ app: 'Ekphrasis', button: $('shelfBtn'), onImage: (file) => loadFile(file) });
+} else {
+  $('shelfBtn').hidden = true;
+}
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && (e.target === document.body || e.target === view)) { e.preventDefault(); togglePlay(); }
 });
